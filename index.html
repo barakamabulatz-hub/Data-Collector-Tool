@@ -1,0 +1,114 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>BRAC CRO Bulk Entry</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font:14px system-ui,sans-serif;background:#f4f6f8;color:#1a1a1a}
+header{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px;background:#0a5c8a;color:#fff;position:sticky;top:0;z-index:30}
+header b{margin-right:auto}input,select,textarea,button{font:inherit;padding:6px;border:1px solid #b9c2cb;border-radius:6px;background:#fff}
+button{cursor:pointer;background:#e8eef3}button.p{background:#0a5c8a;color:#fff;border-color:#0a5c8a}button.d{background:#c0392b;color:#fff;border-color:#c0392b}button:disabled{opacity:.5;cursor:not-allowed}
+#wrap{overflow:auto;max-height:calc(100vh - 110px);background:#fff}table{border-collapse:separate;border-spacing:0}
+th,td{border-bottom:1px solid #dde3e8;border-right:1px solid #eef1f4;padding:4px;vertical-align:top;min-width:170px;max-width:260px}
+th{position:sticky;top:0;background:#dfe8ee;z-index:5;font-size:12px;text-align:left}
+.a{position:sticky;left:0;min-width:200px;max-width:200px;background:#fff;z-index:4}th.a{z-index:6;background:#dfe8ee}
+td select,td input:not([type=checkbox]),td textarea{width:100%}td label{display:block;font-size:12px}
+.off{background:#f0f0f0;color:#999;text-align:center}.bad select,.bad input,.bad textarea{border-color:#c0392b;background:#fdecea}
+.st{display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;margin-left:4px}.Pending{background:#eee}.Submitting{background:#fff3cd}.Submitted{background:#d4edda}.Failed{background:#f8d7da}
+.er{color:#c0392b;font-size:12px}#add{margin:10px}#gate{position:fixed;inset:0;background:#0a5c8a;display:none;align-items:center;justify-content:center;z-index:100}.gb{background:#fff;padding:18px;border-radius:12px;width:min(92vw,380px);display:grid;gap:10px}#m{position:fixed;inset:0;background:#0007;display:none;z-index:200;padding:10px;overflow:auto}
+#m>div{background:#fff;max-width:900px;margin:auto;padding:14px;border-radius:10px}.tb button{margin:2px}.tb .on{background:#0a5c8a;color:#fff}
+.sc{overflow:auto}.sc table td,.sc table th{min-width:0;position:static}.big{font-size:22px;font-weight:700}.g{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}.g div{background:#eef3f7;padding:8px;border-radius:8px}
+</style></head><body>
+<header><b>BRAC CRO Bulk Entry</b><input id=q placeholder="Search…"><select id=sf><option value="">All statuses<option>Pending<option>Submitting<option>Submitted<option>Failed</select>
+<button id=del class=d>Delete selected</button><button id=api>Set URL</button><button id=adm>Admin</button><span id=net></span></header>
+<div id=wrap><table id=t></table></div><button id=add class=p>＋ Add client row</button>
+<div id=gate></div><div id=m><div id=mb></div></div>
+<script>
+const $=s=>document.querySelector(s),L=(k,d)=>{try{return JSON.parse(localStorage[k])??d}catch{return d}},S=(k,v)=>localStorage[k]=JSON.stringify(v);
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let API=L('api',''),schema=L('schema',null),lists=L('lists',{cros:[],branches:[]}),rows=L('rows',[]),sel=new Set,tok=null,PIN=L('pin','');
+const uid=()=>crypto.randomUUID?crypto.randomUUID():Date.now()+'-'+Math.random();
+const save=()=>S('rows',rows),items=()=>schema?schema.pages.flatMap(p=>p.items):[];
+async function call(o){if(!API)throw Error('Tap "Set URL" and paste your Apps Script web-app URL first.');let r;
+ try{r=await fetch(API,{method:'POST',body:JSON.stringify({pin:PIN,token:tok,...o})})}catch(e){throw Error('No internet / server unreachable. Your data is saved on this device; retry when online.')}
+ const j=await r.json();if(!j.ok){if(/^PIN /.test(j.error)){PIN='';localStorage.removeItem('pin');gate()}throw Error(j.error)}return j}
+const adm=(a,o={})=>call({action:a,token:tok,...o});
+async function loadSchema(){const j=await call({action:'schema'});schema=j.schema;lists=j.lists;S('schema',schema);S('lists',lists);render()}
+const isNum=i=>i.t=='TEXT'&&/\(TZS\)|kiasi|amount|salio|balance/i.test(i.title);
+const optsOf=i=>i.t=='TEXT'&&/cro name|jina la cro/i.test(i.title)&&lists.cros.length?lists.cros:i.t=='TEXT'&&/branch name|jina la tawi/i.test(i.title)&&lists.branches.length?lists.branches:i.t=='CHECKBOX'?null:i.ch&&i.ch.map(c=>c.v);
+function vis(r){const v=new Set,P=schema.pages;v.pg=[];let p=0,g=0;
+ while(p!=null&&p<P.length&&g++<60){v.pg.push(p);P[p].items.forEach(i=>v.add(i.id));let n=P[p].nav,nx=p+1;
+  for(const i of P[p].items){const a=r.a[i.id],c=a&&i.ch&&i.t=='MULTIPLE_CHOICE'&&i.ch.find(c=>c.v===a);if(c&&c.nav){n=c.nav;break}}
+  if(n){if(n.t=='END'||n.p==null&&n.t=='GO')break;if(n.t=='GO')nx=n.p}p=nx}return v}
+function cell(r,i,on){if(!on)return'<td class=off>—</td>';const a=r.a[i.id]??'',d=r.status=='Submitted'||r.status=='Submitting'?'disabled':'',o=optsOf(i);let h;
+ if(i.t=='PARAGRAPH_TEXT')h=`<textarea rows=2 ${d}>${esc(a)}</textarea>`;
+ else if(i.t=='CHECKBOX')h=i.ch.map(c=>`<label><input type=checkbox value="${esc(c.v)}" ${(a||[]).includes(c.v)?'checked':''} ${d}> ${esc(c.v)}</label>`).join('');
+ else if(i.t=='SCALE'){o=[];for(let k=i.lo;k<=i.hi;k++)o.push(String(k))}
+ if(h);else if(i.t=='DATE')h=`<input type=date value="${esc(a)}" ${d}>`;else if(i.t=='TIME')h=`<input type=time value="${esc(a)}" ${d}>`;
+ else if(o)h=`<select ${d}><option value="">—`+(a&&!o.includes(a)?`<option selected>${esc(a)}`:'')+o.map(x=>`<option ${x===a?'selected':''}>${esc(x)}`).join('')+'</select>';
+ else h=`<input ${isNum(i)?'type=number inputmode=decimal step=any':''} value="${esc(a)}" ${d}>`;
+ return`<td data-i="${i.id}" class="${(r.miss||[]).includes(i.id)?'bad':''}">${h}</td>`}
+function rowH(r,n){const v=vis(r),s=r.status;
+ return`<tr data-r="${r.id}"><td class=a><input type=checkbox class=sl ${sel.has(r.id)?'checked':''} style="width:auto"> <b>${n+1}</b>
+ <button class=p data-send ${s=='Submitting'||s=='Submitted'?'disabled':''}>${s=='Failed'?'Retry':s=='Submitting'?'Sending…':'SEND'}</button><span class="st ${s}">${s}</span>
+ ${r.ts?`<div style="font-size:11px">${r.ts} (EAT)<br>ID: ${esc(r.rid||'n/a')}</div>`:''}${r.err?`<div class=er>${esc(r.err)}</div>`:''}</td>`+items().map(i=>cell(r,i,v.has(i.id))).join('')+'</tr>'}
+function render(){const t=$('#t');if(!schema){t.innerHTML='<tr><td>Tap "Set URL", paste the Apps Script URL, then Admin → Form to connect the Google Form.</td></tr>';return}
+ const q=$('#q').value.toLowerCase(),f=$('#sf').value;
+ t.innerHTML='<thead><tr><th class=a>Client / Status</th>'+items().map(i=>`<th title="${esc(i.help)}">${esc(i.title)}${i.req?' *':''}</th>`).join('')+'</tr></thead><tbody>'+
+ rows.map((r,n)=>({r,n})).filter(x=>(!f||x.r.status==f)&&(!q||JSON.stringify(x.r.a).toLowerCase().includes(q))).map(x=>rowH(x.r,x.n)).join('')+'</tbody>'}
+$('#q').oninput=$('#sf').onchange=render;
+$('#add').onclick=()=>{rows.push({id:uid(),a:{},status:'Pending'});save();render()};
+$('#t').addEventListener('change',e=>{const tr=e.target.closest('tr[data-r]');if(!tr)return;const r=rows.find(x=>x.id==tr.dataset.r);
+ if(e.target.classList.contains('sl')){e.target.checked?sel.add(r.id):sel.delete(r.id);return}
+ const td=e.target.closest('td[data-i]');if(!td)return;const i=items().find(x=>x.id==td.dataset.i),b=[...vis(r)].join(),s=r.status;
+ r.a[i.id]=i.t=='CHECKBOX'?[...td.querySelectorAll('input:checked')].map(x=>x.value):e.target.value.trim?e.target.value.trim():e.target.value;
+ if(r.status=='Failed'){r.status='Pending';r.err=''}r.miss=(r.miss||[]).filter(x=>x!=i.id);save();
+ if([...vis(r)].join()!=b||s!=r.status)tr.outerHTML=rowH(r,rows.indexOf(r))});
+$('#t').addEventListener('click',e=>{if(e.target.dataset.send!==undefined)send(e.target.closest('tr').dataset.r)});
+$('#del').onclick=()=>{if(!sel.size)return alert('Select rows first (checkboxes).');
+ if(confirm(`Delete ${sel.size} row(s) from this screen? Submitted Google Form responses and the submission history are NOT deleted.`)){rows=rows.filter(r=>!sel.has(r.id));sel.clear();save();render()}};
+async function send(id){const r=rows.find(x=>x.id==id);if(!r||r.status=='Submitting'||r.status=='Submitted')return;const v=vis(r),I=items().filter(i=>v.has(i.id));
+ const e=x=>x==null||x===''||x.length===0,miss=I.filter(i=>i.req&&e(r.a[i.id])).map(i=>i.id);
+ r.status='Submitting';r.err='';r.miss=[];save();render();
+ const ans={};I.forEach(i=>{if(!e(r.a[i.id]))ans[i.id]=r.a[i.id]});const g=re=>{const i=items().find(i=>re.test(i.title));return i?r.a[i.id]||'':''};
+ try{const j=await call({action:'submit',rowId:r.id,answers:ans,pages:v.pg,meta:{cro:g(/cro name|jina la cro/i),branch:g(/branch name|jina la tawi/i),customer:g(/customer name|jina ya mteja/i),member:g(/member id|namba ya uanachama/i)}});
+  r.status='Submitted';r.ts=j.ts;r.rid=j.rid}catch(x){r.status='Failed';r.err=x.message}
+ save();render()}
+$('#api').onclick=()=>{const u=prompt('Apps Script web-app URL (…/exec):',API);if(u!==null){API=u.trim();S('api',API);if(API)loadSchema().catch(x=>alert(x.message))}};
+const net=()=>$('#net').textContent=navigator.onLine?'● online':'● offline';addEventListener('online',net);addEventListener('offline',net);net();
+function gate(){const g=$('#gate');g.style.display='flex';
+ g.innerHTML=`<div class=gb><h3>Enter Code (PIN) from admin to continue</h3>${API?'':'<input id=gu placeholder="Apps Script URL (…/exec)">'}<input id=gp type=password inputmode=numeric placeholder="Code (PIN)"><button class=p id=gg>Continue</button><div id=ge class=er></div><small><a href=# id=ga>Admin login</a></small></div>`;
+ const u=()=>{const x=$('#gu');if(x&&x.value.trim()){API=x.value.trim();S('api',API)}};
+ $('#gg').onclick=async()=>{try{u();PIN=$('#gp').value.trim();await call({action:'checkPin'});S('pin',PIN);g.style.display='none';loadSchema().catch(()=>{})}catch(e){PIN='';$('#ge').textContent=e.message}};
+ $('#ga').onclick=e=>{e.preventDefault();u();M.style.display='block';login()}}
+/* ---------- Admin ---------- */
+const M=$('#m'),B=$('#mb');$('#adm').onclick=()=>{M.style.display='block';tok?tab('form'):login()};
+const X='<button style="float:right" onclick="M.style.display=\'none\'">✕</button>';
+function login(){B.innerHTML=X+'<h3>Admin login</h3><p>First time ever? Whatever password you enter (min 6 chars) becomes the admin password.</p><input id=pw type=password placeholder=Password> <button class=p id=go>Login</button><div id=le class=er></div>';
+ $('#go').onclick=async()=>{try{tok=(await call({action:'login',password:$('#pw').value})).token;$('#gate').style.display='none';loadSchema().catch(()=>{});tab('form')}catch(e){$('#le').textContent=e.message}}}
+const TABS=['form','lists','pins','subs','failed','stats','pw'];
+function tab(n){B.innerHTML=X+'<div class=tb>'+TABS.map(t=>`<button class="${t==n?'on':''}" onclick="tab('${t}')">${{form:'Google Form',lists:'CROs & Branches',pins:'Access PINs',subs:'Submissions',failed:'Failed',stats:'Statistics',pw:'Password'}[t]}</button>`).join('')+'</div><div id=tc>Loading…</div>';
+ T[n]().catch(e=>$('#tc').textContent=e.message)}
+const tbl=(h,r)=>`<div class=sc><table><tr>${h.map(x=>'<th>'+x+'</th>').join('')}</tr>${r.map(a=>'<tr>'+a.map(x=>'<td>'+esc(x)+'</td>').join('')+'</tr>').join('')}</table></div>`;
+const H=['Time (EAT)','CRO','Branch','Customer','Member ID','Row ID','Status/Error','Response ID'];
+const T={
+ async form(){const c=await adm('config');$('#tc').innerHTML=`<p>Form EDIT link (docs.google.com/forms/d/<i>FORM_ID</i>/edit). The Google account that deployed the script must be an editor of the form.</p>
+ <input id=fu style="width:100%" value="${esc(c.url)}"><p>Paste the PUBLIC form link (…/viewform) – every question, option and branch rule is read automatically, no edit access needed. An edit link also works.</p><p><button id=pv>Preview changes</button> <button id=ts>Test connection</button> <button id=sv class=p>Save & apply</button> <button id=rf>Refresh questions</button></p><div id=fo></div><hr><b>Or add all questions manually</b> (overrides the form reading; you must still save the form link above).<br><small>One per line: <code>entryId | TYPE | Y/N | Title | opt1; opt2=>3; opt3=>END</code><br>TYPE = TEXT, PARAGRAPH_TEXT, MULTIPLE_CHOICE, LIST, CHECKBOX, DATE, TIME. A line <code># Section title</code> starts a new section; <code>=>3</code> after an option jumps to section 3, <code>=>END</code> submits.</small><textarea id=mt rows=8 style="width:100%"></textarea><button id=ms class=p>Save manual questions</button> <button id=mc>Clear manual (use form link)</button>`;
+ adm('getManual').then(j=>$('#mt').value=j.txt);const mset=async t=>{const j=await adm('setManual',{txt:t});await loadSchema();$('#fo').innerHTML='✔ '+(j.count?j.count+' manual questions saved.':'Manual questions cleared.')};
+ $('#ms').onclick=()=>mset($('#mt').value).catch(e=>$('#fo').innerHTML='<span class=er>'+esc(e.message)+'</span>');$('#mc').onclick=()=>{$('#mt').value='';mset('').catch(e=>alert(e.message))};
+ const out=h=>$('#fo').innerHTML=h,run=f=>async()=>{try{await f()}catch(e){out('<span class=er>'+esc(e.message)+'</span>')}},u=()=>$('#fu').value.trim();
+ $('#pv').onclick=run(async()=>{const j=await adm('preview',{url:u()}),l=(n,a)=>`<b>${n} (${a.length})</b><ul>${a.map(x=>'<li>'+esc(x)).join('')}</ul>`;out(`<p>${esc(j.title)} – ${j.count} questions</p>`+l('New',j.diff.added)+l('Removed',j.diff.removed)+l('Changed',j.diff.changed))});
+ $('#ts').onclick=run(async()=>{const j=await adm('test',{url:u()});out(`✔ ${esc(j.title)}: ${j.pages} sections, ${j.count} questions.`+(j.unsupported.length?`<br class=er>Unsupported types (skipped): ${esc(j.unsupported.join('; '))}`:''))});
+ $('#sv').onclick=run(async()=>{if(!confirm('Save this form and rebuild the table? Existing rows and history are kept.'))return;await adm('saveForm',{url:u()});await loadSchema();out('✔ Saved. Table updated.')});
+ $('#rf').onclick=run(async()=>{await loadSchema();out('✔ Questions refreshed.')})},
+ async lists(){$('#tc').innerHTML=`<p>One name per line. Leave empty to keep a free-text answer. Used for the "CRO Name" and "Branch Name" columns.</p><b>CROs</b><br><textarea id=l1 rows=8 style="width:100%">${esc(lists.cros.join('\n'))}</textarea><b>Branches</b><br><textarea id=l2 rows=6 style="width:100%">${esc(lists.branches.join('\n'))}</textarea><br><button class=p id=sl>Save</button>`;
+ $('#sl').onclick=async()=>{const f=id=>$(id).value.split('\n').map(s=>s.trim()).filter(Boolean);await adm('setLists',{cros:f('#l1'),branches:f('#l2')});lists={cros:f('#l1'),branches:f('#l2')};S('lists',lists);render();alert('Saved')}},
+ async pins(){$('#tc').innerHTML='<p>Create a code and give it to one person. Revoke it any time.</p><input id=pn placeholder="Name (e.g. CRO Asha)"> <input id=pd type=number placeholder="Valid days (blank = no limit)" style="width:200px"> <button class=p id=pg>Generate PIN</button><div id=pnew class=big></div><div id=pl class=sc></div>';
+ const draw=async()=>{const e=Object.entries((await adm('listPins')).pins);$('#pl').innerHTML='<table><tr><th>PIN<th>Name<th>Created<th>Expires<th></tr>'+e.map(([p,v])=>`<tr><td><b>${esc(p)}</b><td>${esc(v.name)}<td>${esc(v.created)}<td>${v.exp?new Date(v.exp).toLocaleDateString():'Never'}<td><button class=d data-p="${esc(p)}">Revoke</button></tr>`).join('')+'</table>'};
+ $('#pg').onclick=async()=>{try{const j=await adm('genPin',{name:$('#pn').value,days:+$('#pd').value||0});$('#pnew').textContent='New PIN: '+j.pin;draw()}catch(e){alert(e.message)}};
+ $('#pl').onclick=async e=>{const p=e.target.dataset.p;if(p&&confirm('Revoke PIN '+p+'? That person will be locked out.')){try{await adm('revokePin',{pin:p});draw()}catch(x){alert(x.message)}}};draw()},
+ async subs(){$('#tc').innerHTML=tbl(H,(await adm('subs')).rows.reverse())},
+ async failed(){$('#tc').innerHTML=tbl(H,(await adm('failed')).rows.reverse())},
+ async stats(){const s=(await adm('subs')).rows,f=(await adm('failed')).rows,cnt=k=>s.reduce((o,r)=>(o[k(r)]=(o[k(r)]||0)+1,o),{});
+ const by=Object.entries(cnt(r=>r[1]||'(blank)')),dt=Object.entries(cnt(r=>String(r[0]).slice(0,10)));
+ const tot=rows.length,pend=rows.filter(r=>r.status!='Submitted').length;
+ $('#tc').innerHTML=`<div class=g><div>Client rows (this device)<div class=big>${tot}</div></div><div>Submitted (all)<div class=big>${s.length}</div></div><div>Pending (this device)<div class=big>${pend}</div></div><div>Failed attempts<div class=big>${f.length}</div></div><div>Success rate<div class=big>${s.length+f.length?Math.round(100*s.length/(s.length+f.length)):0}%</div></div></div><h4>By CRO</h4>${tbl(['CRO','Clients'],by)}<h4>By date</h4>${tbl(['Date','Clients'],dt)}`},
+ async pw(){$('#tc').innerHTML='<input id=np type=password placeholder="New password (min 6)"> <button class=p id=cp>Change</button>';$('#cp').onclick=async()=>{await adm('chpw',{password:$('#np').value});alert('Password changed')}}};
+render();if(!PIN)gate();else if(API)loadSchema().catch(()=>{});
+</script></body></html>
